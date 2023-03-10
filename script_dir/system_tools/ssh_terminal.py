@@ -32,8 +32,8 @@ class SSHTerminal:
         Returns list of the lines output
         """
         _, stdout, stderr = self.client.exec_command(cmd, timeout=timeout)
-        if stdout.channel.recv_exit_status():
-            raise CommandException(stderr.read().decode())
+        #if stdout.channel.recv_exit_status():
+        #    raise CommandException(stderr.read().decode())
         # if command is executed in the background don't wait for the output
         return (
             None if cmd.rstrip().endswith("&") else stdout.read().decode().rstrip("\n")
