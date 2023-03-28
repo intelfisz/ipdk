@@ -1,5 +1,5 @@
 # Prepare
-1. `pip3 install paramiko ipdb`
+1. `pip3 install paramiko`
 
 # Run script
 1. `python3 demo_script.py`

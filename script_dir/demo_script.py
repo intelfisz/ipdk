@@ -2,12 +2,69 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-import os
-from system_tools.config import HostTargetConfig, StorageTargetConfig
-from system_tools.ssh_terminal import SSHTerminal
-from dotenv import load_dotenv
+#set config
+STORAGE_TARGET_USERNAME = ""
+STORAGE_TARGET_PASSWORD = ""
+STORAGE_TARGET_IP_ADDRESS = ""
 
-load_dotenv()
+HOST_TARGET_USERNAME = ""
+HOST_TARGET_PASSWORD = ""
+HOST_TARGET_IP_ADDRESS = ""
+
+IPU_STORAGE_CONTAINER_IP = "200.1.1.3"
+STORAGE_TARGET_IP = "200.1.1.2"  # Address visible from IPU side.
+
+
+
+
+
+from paramiko.client import AutoAddPolicy, SSHClient
+
+class SSHTerminal:
+    """A class used to represent a session with an SSH server"""
+
+    def __init__(self, config, *args, **kwargs):
+        self.config = config
+        self.client = SSHClient()
+
+        self.client.load_system_host_keys()
+        self.client.set_missing_host_key_policy(AutoAddPolicy)
+        self.client.connect(
+            config.ip_address,
+            config.port,
+            config.username,
+            config.password,
+            *args,
+            **kwargs
+        )
+
+    def execute(self, cmd, timeout=20):
+        """Simple function executes a command on the SSH server
+        Returns list of the lines output
+        """
+        _, stdout, stderr = self.client.exec_command(cmd, timeout=timeout)
+        return (
+            None if cmd.rstrip().endswith("&") else stdout.read().decode().rstrip("\n")
+        )
+
+
+class StorageTargetConfig:
+    def __init__(self):
+        self.username = STORAGE_TARGET_USERNAME
+        self.password = STORAGE_TARGET_PASSWORD
+        self.ip_address = STORAGE_TARGET_IP_ADDRESS
+        self.port = 22
+
+
+class HostTargetConfig:
+    def __init__(self):
+        self.username = HOST_TARGET_USERNAME
+        self.password = HOST_TARGET_PASSWORD
+        self.ip_address = HOST_TARGET_IP_ADDRESS
+        self.port = 22
+
+
+
 
 def get_docker_containers_id_from_docker_image_name(terminal, docker_image_name):
     out = terminal.execute(
@@ -15,14 +72,16 @@ def get_docker_containers_id_from_docker_image_name(terminal, docker_image_name)
     ).splitlines()
     return [line.split()[0] for line in out]
 
-ipu_storage_container_ip = os.getenv("IPU_STORAGE_CONTAINER_IP")
-storage_target_ip = os.getenv("STORAGE_TARGET_IP")
+ipu_storage_container_ip = IPU_STORAGE_CONTAINER_IP
+storage_target_ip = STORAGE_TARGET_IP
 host_target_ip = HostTargetConfig().ip_address
 
 print('Script is starting')
 linkpartner_terminal = SSHTerminal(StorageTargetConfig())
-cmd_sender_id = get_docker_containers_id_from_docker_image_name(linkpartner_terminal, "cmd-sender")[0]
-
+try:
+    cmd_sender_id = get_docker_containers_id_from_docker_image_name(linkpartner_terminal, "cmd-sender")[0]
+except IndexError:
+    raise Exception("cmd sender is not running")
 
 # all this things shall run in host target so you can run it where you want
 
@@ -37,6 +96,7 @@ def create_sender_cmd(cmd):
 
 
 # start operation on cmd_sender
+
 pf_cmd = create_sender_cmd(f"""create_nvme_device {ipu_storage_container_ip} 8080 {host_target_ip} 50051 0 0""")
 pf = linkpartner_terminal.execute(pf_cmd)
 
@@ -44,6 +104,7 @@ create_subsystem_cmd = create_sender_cmd(
     f"""create_and_expose_sybsystem_over_tcp {storage_target_ip} nqn.2016-06.io.spdk:cnode0 4420"""
 )
 linkpartner_terminal.execute(create_subsystem_cmd)
+
 
 create_ramdrive_cmd = create_sender_cmd(
     f"""create_ramdrive_and_attach_as_ns_to_subsystem {storage_target_ip} Malloc0 16 nqn.2016-06.io.spdk:cnode0"""
@@ -56,11 +117,9 @@ attach_cmd = create_sender_cmd(
 )
 linkpartner_terminal.execute(attach_cmd)
 
-import ipdb; ipdb.set_trace()
-
 delete_cmd = create_sender_cmd(
     f"""delete_nvme_device {ipu_storage_container_ip} 8080 {host_target_ip} 50051 {pf}"""
 )
+linkpartner_terminal.execute(delete_cmd)
 
-print('script finished')
-
+print("Script finish successfully")
